@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name=viewport content='width=device-width,initial-scale=1,user-scalable=0'> 
+<title>Solitaire Scrabble</title>
+<style>
+  body {
+    background: #222;
+    color: #eee;
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+  }
+  #topBar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+  }
+  #board {
+    border-collapse: collapse;
+    margin-bottom: 10px;
+  }
+  #board td {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #555;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 18px;
+    cursor: pointer;
+    position: relative;
+  }
+  #rack {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 10px;
+  }
+  .tile {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    background: #caa472;
+    color: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    cursor: pointer;
+    position: relative;
+  }
+  .tile span.value {
+    position: absolute;
+    bottom: 2px;
+    right: 3px;
+    font-size: 10px;
+  }
+  button {
+    padding: 6px 12px;
+    font-size: 14px;
+  }
+  #log {
+    max-width: 600px;
+    font-size: 13px;
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+
+<div id="topBar">
+  <button id="newGameBtn">New Game</button>
+  <button id="playWordBtn">Play Word</button>
+  <span>Score: <span id="score">0</span></span>
+</div>
+
+<table id="board"></table>
+
+<div id="rack"></div>
+
+<div id="log"></div>
+
+<script>
+// ---------------------- SCRABBLE CORE DATA ----------------------
+const TILE_DISTRIBUTION = [
+  { letter: "A", count: 9, value: 1 },
+  { letter: "B", count: 2, value: 3 },
+  { letter: "C", count: 2, value: 3 },
+  { letter: "D", count: 4, value: 2 },
+  { letter: "E", count: 12, value: 1 },
+  { letter: "F", count: 2, value: 4 },
+  { letter: "G", count: 3, value: 2 },
+  { letter: "H", count: 2, value: 4 },
+  { letter: "I", count: 9, value: 1 },
+  { letter: "J", count: 1, value: 8 },
+  { letter: "K", count: 1, value: 5 },
+  { letter: "L", count: 4, value: 1 },
+  { letter: "M", count: 2, value: 3 },
+  { letter: "N", count: 6, value: 1 },
+  { letter: "O", count: 8, value: 1 },
+  { letter: "P", count: 2, value: 3 },
+  { letter: "Q", count: 1, value: 10 },
+  { letter: "R", count: 6, value: 1 },
+  { letter: "S", count: 4, value: 1 },
+  { letter: "T", count: 6, value: 1 },
+  { letter: "U", count: 4, value: 1 },
+  { letter: "V", count: 2, value: 4 },
+  { letter: "W", count: 2, value: 4 },
+  { letter: "X", count: 1, value: 8 },
+  { letter: "Y", count: 2, value: 4 },
+  { letter: "Z", count: 1, value: 10 },
+  { letter: "?", count: 2, value: 0 } // blanks
+];
+
+const BOARD_SIZE = 15;
+const RACK_SIZE = 7;
+
+// ---------------------- STATE ----------------------
+let bag = [];
+let board = []; // {letter, value, locked}
+let rack = [];
+let selectedTileIndex = null;
+let score = 0;
+
+// ---------------------- INIT ----------------------
+const boardEl = document.getElementById("board");
+const rackEl = document.getElementById("rack");
+const scoreEl = document.getElementById("score");
+const logEl = document.getElementById("log");
+const newGameBtn = document.getElementById("newGameBtn");
+const playWordBtn = document.getElementById("playWordBtn");
+
+newGameBtn.addEventListener("click", newGame);
+playWordBtn.addEventListener("click", playWord);
+
+function newGame() {
+  score = 0;
+  scoreEl.textContent = score;
+  logEl.textContent = "";
+  initBag();
+  initBoard();
+  initRack();
+  renderBoard();
+  renderRack();
+}
+
+function initBag() {
+  bag = [];
+  for (const tile of TILE_DISTRIBUTION) {
+    for (let i = 0; i < tile.count; i++) {
+      bag.push({ letter: tile.letter, value: tile.value });
+    }
+  }
+  shuffle(bag);
+}
+
+function initBoard() {
+  board = [];
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    const row = [];
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      row.push({ letter: "", value: 0, locked: false });
+    }
+    board.push(row);
+  }
+}
+
+function initRack() {
+  rack = [];
+  drawTiles(RACK_SIZE);
+}
+
+// ---------------------- UTIL ----------------------
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+function drawTiles(n) {
+  for (let i = 0; i < n && bag.length > 0; i++) {
+    rack.push(bag.pop());
+  }
+}
+
+// ---------------------- RENDER ----------------------
+function renderBoard() {
+  boardEl.innerHTML = "";
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    const tr = document.createElement("tr");
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const td = document.createElement("td");
+      const cell = board[r][c];
+      if (cell.letter) {
+        td.textContent = cell.letter;
+      }
+      if (!cell.locked && cell.letter) {
+        td.style.background = "#333";
+      } else if (cell.locked && cell.letter) {
+        td.style.background = "#444";
+      }
+      td.addEventListener("click", () => onBoardClick(r, c));
+      tr.appendChild(td);
+    }
+    boardEl.appendChild(tr);
+  }
+}
+
+function renderRack() {
+  rackEl.innerHTML = "";
+  rack.forEach((tile, idx) => {
+    const div = document.createElement("div");
+    div.className = "tile";
+    div.textContent = tile.letter;
+    const valSpan = document.createElement("span");
+    valSpan.className = "value";
+    valSpan.textContent = tile.value;
+    div.appendChild(valSpan);
+    if (idx === selectedTileIndex) {
+      div.style.outline = "2px solid #0f0";
+    }
+    div.addEventListener("click", () => onRackClick(idx));
+    rackEl.appendChild(div);
+  });
+}
+
+// ---------------------- INPUT HANDLERS ----------------------
+function onRackClick(idx) {
+  if (selectedTileIndex === idx) {
+    selectedTileIndex = null;
+  } else {
+    selectedTileIndex = idx;
+  }
+  renderRack();
+}
+
+function onBoardClick(r, c) {
+  if (selectedTileIndex === null) return;
+  const cell = board[r][c];
+  if (cell.locked || cell.letter) return;
+
+  const tile = rack[selectedTileIndex];
+  board[r][c] = { letter: tile.letter, value: tile.value, locked: false };
+  rack.splice(selectedTileIndex, 1);
+  selectedTileIndex = null;
+  renderBoard();
+  renderRack();
+}
+
+// ---------------------- WORD PLAY LOGIC ----------------------
+function playWord() {
+  // Collect all newly placed tiles (not locked)
+  const placed = [];
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const cell = board[r][c];
+      if (cell.letter && !cell.locked) {
+        placed.push({ r, c, letter: cell.letter, value: cell.value });
+      }
+    }
+  }
+
+  if (placed.length === 0) {
+    log("Place tiles before playing a word.");
+    return;
+  }
+
+  // For simplicity: require all placed tiles to be in one row or one column
+  const sameRow = placed.every(p => p.r === placed[0].r);
+  const sameCol = placed.every(p => p.c === placed[0].c);
+
+  if (!sameRow && !sameCol) {
+    log("Tiles must be in a single row or column (simple mode).");
+    return;
+  }
+
+  // Sort by position
+  if (sameRow) {
+    placed.sort((a, b) => a.c - b.c);
+  } else {
+    placed.sort((a, b) => a.r - b.r);
+  }
+
+  // Build the word by scanning from first to last, including existing locked tiles
+  let word = "";
+  let wordScore = 0;
+
+  if (sameRow) {
+    const row = placed[0].r;
+    let start = placed[0].c;
+    let end = placed[placed.length - 1].c;
+
+    for (let c = start; c <= end; c++) {
+      const cell = board[row][c];
+      if (!cell.letter) {
+        log("No gaps allowed in the word (simple mode).");
+        return;
+      }
+      word += cell.letter;
+      wordScore += cell.value;
+    }
+  } else {
+    const col = placed[0].c;
+    let start = placed[0].r;
+    let end = placed[placed.length - 1].r;
+
+    for (let r = start; r <= end; r++) {
+      const cell = board[r][col];
+      if (!cell.letter) {
+        log("No gaps allowed in the word (simple mode).");
+        return;
+      }
+      word += cell.letter;
+      wordScore += cell.value;
+    }
+  }
+
+  // TODO: hook dictionary API here to validate `word`
+  // e.g. await pipelines["DictionaryAPI"].validateWord(word)
+
+  // Lock tiles and update score
+  placed.forEach(p => {
+    board[p.r][p.c].locked = true;
+  });
+
+  score += wordScore;
+  scoreEl.textContent = score;
+  log(`Played "${word}" for ${wordScore} points.`);
+
+  // Draw new tiles
+  drawTiles(RACK_SIZE - rack.length);
+  renderBoard();
+  renderRack();
+}
+
+// ---------------------- LOG ----------------------
+function log(msg) {
+  const line = document.createElement("div");
+  line.textContent = msg;
+  logEl.prepend(line);
+}
+
+// ---------------------- START ----------------------
+newGame();
+</script>
+
+</body>
+</html>
